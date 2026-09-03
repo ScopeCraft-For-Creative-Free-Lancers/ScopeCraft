@@ -69,3 +69,7 @@ body.dark-mode .contract-dark-view .contract-security-pattern,body.dark-mode .co
 .document-title-section{display:none}.contract-heading-copy{margin-top:14px}.contract-classification{display:block;color:#64748b;font-size:9px;font-weight:800;letter-spacing:.14em}.contract-heading-copy h1{margin:4px 0 2px;font-size:25px;line-height:1.2}.contract-heading-copy p{margin:0;color:#64748b;font-size:11px;line-height:1.6}
 .logo-scope{color:#fff}.logo-craft{color:#34d399}
 body.dark-mode .logo-scope,:root[data-theme="dark"] .logo-scope{color:#fff!important}
+.watermark-layer,
+#preview-watermark {
+  background: none !important;
+}
