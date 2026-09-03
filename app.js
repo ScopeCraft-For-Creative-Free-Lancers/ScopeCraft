@@ -448,19 +448,8 @@ function renderLegalTerms() {
   if (!state.isPro) {
     legal.innerHTML = "";
     signatures.innerHTML = `<div class="border border-dashed border-zinc-300 bg-zinc-50 rounded-lg p-6 text-center my-6"><p class="text-sm font-semibold text-zinc-700">Execution Block &amp; Enforceable Legal Terms Locked</p><p class="text-xs text-zinc-500 mt-1">Upgrade to ScopeCraft Pro to structurally inject binding legal terms, dispute resolution, IP assignment, and dual execution blocks.</p></div>`;
-    let watermark = $("preview-watermark");
-    if (!watermark) {
-      watermark = document.createElement("div");
-      watermark.id = "preview-watermark";
-      watermark.className = "watermark-layer";
-      watermark.dataset.watermark = "ScopeCraft Free Draft • Non-Binding";
-      watermark.setAttribute("aria-hidden", "true");
-      $("contract-canvas").prepend(watermark);
-    }
-    watermark.classList.remove("hidden");
     return;
   }
-  $("preview-watermark")?.remove();
   legal.innerHTML = `<div class="space-y-3 border-t border-zinc-200 pt-4"><section><h3 class="font-bold text-zinc-900">Scope Boundaries &amp; Acceptance</h3><p>Client has five business days to review and accept each delivery. Silence after that window constitutes acceptance.</p></section><section><h3 class="font-bold text-zinc-900">Compensation &amp; Milestones</h3><p>Fees follow the milestone schedule. Late balances accrue a 1.5% monthly fee. High-risk engagements require a 100% non-refundable kill fee.</p></section><section><h3 class="font-bold text-zinc-900">Intellectual Property Ownership</h3><p>All intellectual property remains the contractor's property until 100% of the final balance is settled.</p></section><section><h3 class="font-bold text-zinc-900">Out-of-Scope Work</h3><p>Additional work requires written approval and is billed at the ${money(75 * state.market)}/hr benchmark.</p></section><section><h3 class="font-bold text-zinc-900">Independent Contractor &amp; Liability</h3><p>The provider is an independent contractor. Parties provide mutual indemnification, with liability capped at fees paid under this statement.</p></section><section><h3 class="font-bold text-zinc-900">Governing Law &amp; Dispute Resolution</h3><p>Disputes will be handled through binding arbitration under the governing law agreed by the parties.</p></section></div>`;
   signatures.innerHTML = `<div class="signature-panel"><div class="signature-grid"><div><p class="signature-name">Service Provider</p><div class="signature-line"></div><div class="signature-fields"><span>Printed name</span><span>Date</span></div></div><div><p class="signature-name">Client Authorized Representative</p><div class="signature-line"></div><div class="signature-fields"><span>Printed name</span><span>Date</span></div></div></div></div>`;
 }
@@ -496,8 +485,6 @@ function applyLicenseState() {
     overlay.classList.toggle("hidden", state.isPro);
     overlay.style.display = state.isPro ? "none" : "flex";
   }
-  const watermark = $("preview-watermark");
-  if (watermark) watermark.classList.toggle("hidden", state.isPro);
   renderLegalTerms();
 }
 
@@ -912,7 +899,6 @@ document.addEventListener("click", (event) => {
       return;
     }
     window.syncModalFieldsToContract();
-    document.querySelectorAll("#contract-canvas #preview-watermark, #contract-canvas #contract-watermark, #contract-canvas .watermark").forEach((watermark) => watermark.classList.add("hidden"));
     window.closeCustomizeModal();
     posthogCapture("certified_pdf_export_requested");
     window.exportSinglePagePDF("ScopeCraft_Agreement.pdf", target);
