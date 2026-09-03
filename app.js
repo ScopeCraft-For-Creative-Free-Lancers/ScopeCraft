@@ -13,6 +13,36 @@ const $ = (id) => document.getElementById(id);
 const qs = (selector, root = document) => root.querySelector(selector);
 const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+function initializeMicroAnimations() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  qsa(".card:not(.sticky-breakdown)").forEach((card) => {
+    card.addEventListener("mousemove", (event) => {
+      const bounds = card.getBoundingClientRect();
+      const x = (event.clientX - bounds.left) / bounds.width;
+      const y = (event.clientY - bounds.top) / bounds.height;
+      card.style.setProperty("--spot-x", `${x * 100}%`);
+      card.style.setProperty("--spot-y", `${y * 100}%`);
+      card.style.setProperty("--tilt-x", `${(x - 0.5) * 3}deg`);
+      card.style.setProperty("--tilt-y", `${(0.5 - y) * 3}deg`);
+    });
+    card.addEventListener("mouseleave", () => {
+      card.style.removeProperty("--tilt-x");
+      card.style.removeProperty("--tilt-y");
+    });
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button || button.disabled || button.classList.contains("star-btn")) return;
+    const bounds = button.getBoundingClientRect();
+    const ripple = document.createElement("span");
+    ripple.className = "ui-ripple";
+    ripple.style.left = `${event.clientX - bounds.left}px`;
+    ripple.style.top = `${event.clientY - bounds.top}px`;
+    button.append(ripple);
+    ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+  });
+}
+
 const currencyMeta = {
   USD: { symbol: "$", rate: 1 },
   EUR: { symbol: "€", rate: 0.92 },
@@ -39,7 +69,8 @@ const state = {
   projectTotal: 0,
   retainerFee: 0,
   changeTotal: 0,
-  rowCounters: { milestone: 1, change: 1 }
+  rowCounters: { milestone: 1, change: 1 },
+  isExecuted: false
 };
 
 const FEEDBACK_ENDPOINT = "https://formspree.io/f/mwlkbzbd";
@@ -130,6 +161,80 @@ function setText(id, value) {
   if (node) node.textContent = value;
 }
 
+function animateMoney(id, value) {
+  const node = $(id);
+  if (!node) return;
+  const start = Number(node.dataset.numericValue || 0);
+  const end = Math.max(0, value);
+  node.dataset.numericValue = String(end);
+  const started = performance.now();
+  const duration = 420;
+  const tick = (now) => {
+    const progress = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    node.textContent = money(start + (end - start) * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function slamExecutedStamp() {
+  const sheet = $("contract-canvas");
+  const slot = $("preview-status-slot");
+  if (!sheet || !slot) return;
+  if (state.isExecuted) {
+    state.isExecuted = false;
+    sheet.classList.remove("is-executed", "contract-shake");
+    slot.replaceChildren();
+    return;
+  }
+  state.isExecuted = true;
+  const stamp = createExecutedStamp();
+  stamp.classList.remove("executed-stamp-visible");
+  sheet.classList.remove("contract-shake");
+  void stamp.offsetWidth;
+  stamp.classList.add("executed-stamp-visible");
+  stamp.setAttribute("aria-hidden", "false");
+  sheet.classList.add("is-executed");
+  sheet.classList.add("contract-shake");
+}
+
+function createExecutedStamp() {
+  const stamp = document.createElement("div");
+  stamp.id = "executed-stamp";
+  stamp.className = "executed-stamp";
+  stamp.setAttribute("aria-hidden", "true");
+  stamp.innerHTML = '<span class="executed-stamp__dot"></span><span>EXECUTED</span>';
+  stamp.addEventListener("click", slamExecutedStamp);
+  $("preview-status-slot")?.append(stamp);
+  return stamp;
+}
+
+function toggleContractDarkView() {
+  const darkMode = document.body.classList.toggle("dark-mode");
+  document.body.dataset.theme = darkMode ? "dark" : "light";
+  $("contract-canvas")?.classList.toggle("contract-dark-view", darkMode);
+}
+
+const themeToggle = $("theme-toggle");
+if (themeToggle) {
+  themeToggle.addEventListener("click", toggleContractDarkView);
+}
+
+function toggleContractFullscreen() {
+  const sheet = $("contract-canvas");
+  if (!sheet) return;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else sheet.requestFullscreen?.();
+}
+
+function closeDefendRateDrawer() {
+  const drawer = $("drawer-negotiation");
+  if (!drawer) return;
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
 function checked(id) {
   return Boolean($(id)?.checked);
 }
@@ -164,7 +269,7 @@ function calculateProject() {
   setText("text-market-adjustment", `${state.market.toFixed(2)}x`);
   setText("text-turnaround-fee", money(turnaroundFee + revisionFee + addOnFees));
   setText("text-friction-buffer", money(friction));
-  setText("text-grand-total", money(total));
+  animateMoney("text-grand-total", total);
   setText("text-required-deposit", money(riskCount() >= 2 ? total : total * 0.5));
   $("risk-warning").classList.toggle("hidden", riskCount() < 2);
   updatePreview();
@@ -184,7 +289,7 @@ function calculateRetainer() {
   setText("text-market-adjustment", `${state.market.toFixed(2)}x`);
   setText("text-turnaround-fee", money(priority > 1 ? fee - fee / priority : 0));
   setText("text-friction-buffer", money(0));
-  setText("text-grand-total", money(fee));
+  animateMoney("text-grand-total", fee);
   setText("text-required-deposit", money(fee));
 }
 
@@ -202,7 +307,7 @@ function calculateChangeOrder() {
   setText("text-market-adjustment", `${state.market.toFixed(2)}x`);
   setText("text-turnaround-fee", money(0));
   setText("text-friction-buffer", money(0));
-  setText("text-grand-total", money(total));
+  animateMoney("text-grand-total", total);
   setText("text-required-deposit", money(total));
 }
 
@@ -285,6 +390,8 @@ function updatePreview() {
     $("preview-logo-slot").innerHTML = `<svg class="h-10 w-10" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="ScopeCraft logo"><rect width="80" height="80" rx="18" fill="#121215"/><rect x=".75" y=".75" width="78.5" height="78.5" rx="17.25" stroke="#27272a" stroke-width="1.5"/><path d="M23 34V26c0-1.66 1.34-3 3-3h8M46 23h8c1.66 0 3 1.34 3 3v8M57 46v8c0 1.66-1.34 3-3 3h-8M34 57h-8c-1.66 0-3-1.34-3-3v-8" stroke="#71717a" stroke-width="2.5" stroke-linecap="round"/><path d="m31 40.5 6.5 6.5 12-13.5" stroke="#10b981" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   }
   setText("preview-project-title", $("input-project-title").value || "Statement of Work");
+  if (state.isExecuted && !$("executed-stamp")) createExecutedStamp();
+  setText("preview-reference", `SC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`);
   setText("preview-contractor-name", $("input-contractor-name")?.value || "Your Full Name");
   setText("preview-entity-name", $("input-entity-name")?.value || "Your Entity / Agency");
   setText("preview-contractor-email", $("input-contractor-email")?.value || "you@example.com");
@@ -293,10 +400,32 @@ function updatePreview() {
   setText("preview-client-email", $("input-client-email")?.value || "client@example.com");
   setText("preview-deliverables", $("input-deliverables").value);
   setText("preview-payment-terms", $("input-payment-terms")?.value || "50% upfront, 50% on final delivery");
+  const previewFlow = qs("#contract-canvas > .space-y-5");
+  if (previewFlow) {
+    ["document-title-section", "parties-block", "deliverables-section", "payment-section", "milestone-section"].forEach((className, index) => {
+      previewFlow.children[index]?.classList.add("document-section", className);
+    });
+    let commercial = $("preview-commercial-terms");
+    if (!commercial) {
+      commercial = document.createElement("section");
+      commercial.id = "preview-commercial-terms";
+      commercial.className = "document-section commercial-section";
+      const milestoneSection = previewFlow.children[4];
+      milestoneSection?.before(commercial);
+    }
+    const total = state.mode === "retainer" ? state.retainerFee : state.mode === "change-order" ? state.changeTotal : state.projectTotal;
+    setText("preview-total-value", money(total));
+    setText("preview-billing-schedule", $("input-payment-terms")?.value || "50% upfront");
+    setText("preview-turnaround-time", $("select-turnaround")?.selectedOptions[0]?.textContent || "Standard delivery");
+    commercial.innerHTML = `<p class="preview-label">Commercial Terms</p><div class="commercial-grid"><div><span>Total Value</span><strong id="preview-total-value">${money(total)}</strong></div><div><span>Billing Schedule</span><strong id="preview-billing-schedule">${escapeHtml($("input-payment-terms")?.value || "50% upfront")}</strong></div><div><span>Turnaround Time</span><strong id="preview-turnaround-time">${escapeHtml($("select-turnaround")?.selectedOptions[0]?.textContent || "Standard delivery")}</strong></div></div>`;
+  }
   const accent = $("input-brand-color")?.value || "#10b981";
   $("contract-canvas").style.setProperty("--brand-accent", accent);
   const previewRule = qs(".contract-sheet > .flex");
-  if (previewRule) previewRule.style.borderColor = accent;
+  if (previewRule) {
+    previewRule.style.borderColor = accent;
+    previewRule.classList.add("contract-header");
+  }
   $("preview-heading").style.color = accent;
   const date = $("input-effective-date")?.value;
   setText("preview-effective-date", date || "Effective date");
@@ -304,7 +433,7 @@ function updatePreview() {
     name: qs('input[id^="milestone-"][id$="-name"]', row)?.value || "Milestone",
     amount: qs('input[id^="milestone-"][id$="-amount"]', row)?.value || "0"
   }));
-  $("preview-milestones").innerHTML = milestones.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.amount)}%</td></tr>`).join("");
+  $("preview-milestones").innerHTML = milestones.map((item, index) => `<tr><td>${escapeHtml(item.name)}</td><td>${date || "TBD"}</td><td class="fee-cell">${escapeHtml(item.amount)}%</td></tr>`).join("");
   renderLegalTerms();
 }
 
@@ -333,7 +462,7 @@ function renderLegalTerms() {
   }
   $("preview-watermark")?.remove();
   legal.innerHTML = `<div class="space-y-3 border-t border-zinc-200 pt-4"><section><h3 class="font-bold text-zinc-900">Scope Boundaries &amp; Acceptance</h3><p>Client has five business days to review and accept each delivery. Silence after that window constitutes acceptance.</p></section><section><h3 class="font-bold text-zinc-900">Compensation &amp; Milestones</h3><p>Fees follow the milestone schedule. Late balances accrue a 1.5% monthly fee. High-risk engagements require a 100% non-refundable kill fee.</p></section><section><h3 class="font-bold text-zinc-900">Intellectual Property Ownership</h3><p>All intellectual property remains the contractor's property until 100% of the final balance is settled.</p></section><section><h3 class="font-bold text-zinc-900">Out-of-Scope Work</h3><p>Additional work requires written approval and is billed at the ${money(75 * state.market)}/hr benchmark.</p></section><section><h3 class="font-bold text-zinc-900">Independent Contractor &amp; Liability</h3><p>The provider is an independent contractor. Parties provide mutual indemnification, with liability capped at fees paid under this statement.</p></section><section><h3 class="font-bold text-zinc-900">Governing Law &amp; Dispute Resolution</h3><p>Disputes will be handled through binding arbitration under the governing law agreed by the parties.</p></section></div>`;
-  signatures.innerHTML = `<div class="grid grid-cols-2 gap-5 border-t border-zinc-300 pt-6"><div><p class="font-bold text-zinc-900">Service Provider</p><div class="mt-10 border-b border-zinc-400"></div><p class="mt-1 text-xs">Signature · Printed Name · Title · Date</p></div><div><p class="font-bold text-zinc-900">Client Authorized Representative</p><div class="mt-10 border-b border-zinc-400"></div><p class="mt-1 text-xs">Signature · Printed Name · Title · Date</p></div></div>`;
+  signatures.innerHTML = `<div class="signature-panel"><div class="signature-grid"><div><p class="signature-name">Service Provider</p><div class="signature-line"></div><div class="signature-fields"><span>Printed name</span><span>Date</span></div></div><div><p class="signature-name">Client Authorized Representative</p><div class="signature-line"></div><div class="signature-fields"><span>Printed name</span><span>Date</span></div></div></div></div>`;
 }
 
 function applyLicenseState() {
@@ -343,13 +472,16 @@ function applyLicenseState() {
   const footerStatus = $("footer-license-status");
   if (badge) {
     badge.textContent = state.isPro ? "Pro Lifetime" : "Free Draft";
-    badge.style.background = state.isPro ? "#064e3b" : "";
-    badge.style.color = state.isPro ? "#6ee7b7" : "";
+    badge.style.background = state.isPro ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)";
+    badge.style.color = state.isPro ? "#4ade80" : "#f87171";
+    badge.classList.toggle("license-free", !state.isPro);
   }
   if (footerStatus) {
     footerStatus.textContent = state.isPro ? "● License: Pro Lifetime" : "License: Free Draft";
     footerStatus.style.color = state.isPro ? "#34d399" : "";
+    footerStatus.classList.toggle("license-free", !state.isPro);
   }
+  if (!state.isExecuted) $("preview-status-slot")?.replaceChildren();
   const scripts = $("defend-rate-content");
   const overlay = $("defend-rate-lock-overlay");
   if (scripts) {
@@ -397,6 +529,23 @@ function updateLicenseUI() {
 
 function copyText(text, success = "Copied to clipboard.") {
   navigator.clipboard.writeText(text).then(() => showToast(success)).catch(() => showToast("Clipboard access was blocked by the browser."));
+}
+
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.cssText = "position: fixed; top: -9999px; left: -9999px; opacity: 0;";
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy command failed");
 }
 
 function copyPitch() {
@@ -488,8 +637,6 @@ window.exportSinglePagePDF = function exportSinglePagePDF(filename = "ScopeCraft
       .toPdf()
       .get("pdf")
       .then((pdf) => {
-        const totalPages = pdf.internal.getNumberOfPages();
-        for (let index = totalPages; index > 1; index -= 1) pdf.deletePage(index);
         pdf.save(filename);
       })
       .then(restoreButton)
@@ -533,14 +680,32 @@ function bindEvents() {
   $("btn-assets-plus").addEventListener("click", () => step("input-asset-volume", 1, 1, 40));
   $("btn-add-milestone").addEventListener("click", addMilestone);
   $("btn-add-change").addEventListener("click", addChangeOrder);
-  $("btn-open-negotiation").addEventListener("click", () => {
+  $("btn-open-negotiation")?.addEventListener("click", () => {
     posthogCapture("negotiation_drawer_opened");
     applyDefendRateModalState();
     $("drawer-negotiation").classList.add("open");
     $("drawer-negotiation").setAttribute("aria-hidden", "false");
   });
-  $("btn-close-negotiation").addEventListener("click", () => { $("drawer-negotiation").classList.remove("open"); $("drawer-negotiation").setAttribute("aria-hidden", "true"); });
+  $("close-defend-modal")?.addEventListener("click", closeDefendRateDrawer);
   $("btn-copy-pitch").addEventListener("click", copyPitch);
+  $("btn-header-export")?.addEventListener("click", () => {
+    const exportButton = state.isPro ? $("btn-export-pro") : $("btn-export-sample");
+    exportButton?.click();
+  });
+  $("btn-header-theme")?.addEventListener("click", toggleContractDarkView);
+  $("btn-header-sponsor")?.addEventListener("click", () => showToast("Thank you for supporting ScopeCraft."));
+  $("dock-copy-link")?.addEventListener("click", () => $("btn-copy-ref")?.click());
+  $("dock-export-pdf")?.addEventListener("click", () => {
+    const exportButton = state.isPro ? $("btn-export-pro") : $("btn-export-sample");
+    exportButton?.click();
+  });
+  $("btn-inline-export")?.addEventListener("click", () => $("dock-export-pdf")?.click());
+  $("btn-inline-print")?.addEventListener("click", () => window.print());
+  $("btn-inline-link")?.addEventListener("click", () => $("dock-copy-link")?.click());
+  $("dock-approve-sign")?.addEventListener("click", slamExecutedStamp);
+  $("executed-stamp")?.addEventListener("click", slamExecutedStamp);
+  $("dock-dark-view")?.addEventListener("click", toggleContractDarkView);
+  $("dock-fullscreen")?.addEventListener("click", toggleContractFullscreen);
   $("btn-upgrade-cta").addEventListener("click", () => { localStorage.setItem(DRAFT_KEY, JSON.stringify(collectFormData())); window.location.href = PAYMENT_CHECKOUT_URL; });
   $("btn-apply-ref").addEventListener("click", () => {
     const input = $("input-ref-code");
@@ -560,17 +725,26 @@ function bindEvents() {
       feedback.className = "text-[10px] text-emerald-400";
     }
   });
-  $("btn-copy-ref").addEventListener("click", async () => {
-    const code = getOrCreateReferralCode();
-    const link = `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(code)}`;
+  $("btn-copy-ref").addEventListener("click", async (event) => {
+    event.preventDefault();
+    const referralElement = $("user-ref-code");
+    const code = referralElement?.value?.trim() || referralElement?.textContent?.trim() || getOrCreateReferralCode();
+    const button = $("btn-copy-ref");
+    const label = button?.querySelector("span");
+    const originalLabel = label?.textContent || "📋 Copy Link";
     try {
-      await navigator.clipboard.writeText(link);
+      await copyToClipboard(code);
+      if (label) label.textContent = "Copied!";
       const toast = $("ref-copy-toast");
       toast?.classList.remove("hidden");
-      window.setTimeout(() => toast?.classList.add("hidden"), 2000);
+      window.clearTimeout(button?.copyFeedbackTimeout);
+      button.copyFeedbackTimeout = window.setTimeout(() => {
+        if (label) label.textContent = originalLabel;
+        toast?.classList.add("hidden");
+      }, 2000);
     } catch (error) {
-      showToast("Clipboard access was blocked by the browser.");
-      console.error("Could not copy referral link:", error);
+      showToast("Could not copy referral code. Please try again.");
+      console.error("Could not copy referral code:", error);
     }
   });
   $("btn-reset-license").addEventListener("click", () => {
@@ -620,7 +794,12 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("click", (event) => {
   const modal = getCustomizeModal();
   const helpModal = $("help-modal");
+  const defendDrawer = $("drawer-negotiation");
   const target = event.target.closest("button, a");
+  if (defendDrawer && event.target === defendDrawer) {
+    closeDefendRateDrawer();
+    return;
+  }
   if (target?.id === "btn-open-help") {
     event.preventDefault();
     helpModal?.classList.remove("hidden");
@@ -682,6 +861,7 @@ document.addEventListener("click", (event) => {
       target.disabled = false;
       target.innerText = "Submit Feedback";
     });
+
     return;
   }
 
@@ -799,12 +979,14 @@ document.addEventListener("keydown", (event) => {
   }
   const modal = getCustomizeModal();
   if (modal && !modal.classList.contains("hidden")) window.closeCustomizeModal();
+  if ($("drawer-negotiation")?.classList.contains("open")) closeDefendRateDrawer();
 });
 
 document.addEventListener("DOMContentLoaded", () => {
   initializeReferralSystem();
   updateHeaderRating();
   initializeFeedbackState();
+  initializeMicroAnimations();
   bindEvents();
   initPaymentListener();
   applyLicenseState();
